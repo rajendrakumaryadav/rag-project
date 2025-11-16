@@ -1,0 +1,68 @@
+# Simplified LangChain + LangGraph configuration template.
+# Adjust the provider sections to match your actual secrets and endpoints.
+
+[default]
+provider = "openai"
+model = "gpt-4o"
+temperature = 0.2
+
+[openai]
+provider = "openai"
+model = "o3-mini"
+api_key = "<SET_OPENAI_KEY>"
+base_url = "https://api.openai.com/v1"
+
+[azure]
+provider = "azure_openai"
+resource_name = "<AZURE_RESOURCE>"
+deployment_id = "<AZURE_DEPLOYMENT>"
+azure_api_key = "<SET_AZURE_KEY>"
+model = "gpt-4o"
+temperature = 0.1
+
+[ollama]
+provider = "ollama"
+model = "ollama:llama3"
+host = "http://localhost:11434"
+
+# OpenRouter - Unified API for multiple LLM providers
+# Get your API key from https://openrouter.ai/keys
+[openrouter]
+provider = "openai"  # OpenRouter uses OpenAI-compatible API
+model = "openai/gpt-4o"  # Format: provider/model-name
+api_key = "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"
+base_url = "https://openrouter.ai/api/v1"
+temperature = 0.7
+
+# OpenRouter with Claude
+[openrouter_claude]
+provider = "openai"
+model = "anthropic/claude-3.5-sonnet"
+api_key = "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"
+base_url = "https://openrouter.ai/api/v1"
+temperature = 0.5
+
+# OpenRouter with Llama
+[openrouter_llama]
+provider = "openai"
+model = "meta-llama/llama-3.1-70b-instruct"
+api_key = "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"
+base_url = "https://openrouter.ai/api/v1"
+temperature = 0.2
+
+# OpenRouter with Google Gemini
+[openrouter_gemini]
+provider = "openai"
+model = "google/gemini-pro-1.5"
+api_key = "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"
+base_url = "https://openrouter.ai/api/v1"
+temperature = 0.6
+
+[metadata]
+upload_dir = "src/data/uploads"
+document_store = "pdfplumber"
+doc_scan_tool = "docling-mimic"
+
+[logging]
+level = "INFO"
+formatter = "rich"

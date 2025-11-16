@@ -1,17 +1,48 @@
 [project]
 name = "llm-pkg"
 version = "0.1.0"
-description = "Add your description here"
+description = "Full-featured document scanning + QA platform that uploads docs, scans them like Docling, and drives configurable LangChain/LangGraph pipelines."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
+authors = [
+  { name = "Rajendra Yadav", email = "rajendra@example.com" }
+]
+license = { text = "MIT" }
+keywords = ["langchain", "langgraph", "fastapi", "uvicorn", "document-scanning", "qa", "uploads"]
+
 dependencies = [
-    "tiktoken>=0.12.0",
-    "torch>=2.8.0",
+  "uvicorn[standard]>=0.23.0",
+  "fastapi>=0.103.0",
+  "python-multipart>=0.0.6",
+  "langchain==1.0.3",
+  "langchain-openai>=0.3.33",
+  "langchain-azure-ai>=0.2.4",
+  "langchain-ollama>=0.1.1",
+  "langchain-community>=0.3.0",
+  "langgraph==1.0.3",
+  "rich>=13.0.0",
+  "pyyaml>=6.0",
+  "tomli>=2.0",
+  "tomli-w>=1.0",
+  "pypdf>=3.16.0",
+  "pdfplumber>=0.8.0",
+  "faiss-cpu>=1.7.4",
+  "tiktoken>=0.5.0",
 ]
 
 [project.scripts]
-llm-pkg = "llm_pkg:main"
+llm-pkg = "llm_pkg.cli:main"
+llm-pkg-server = "llm_pkg.app:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-asyncio>=0.22",
+  "httpx>=0.25.0",
+  "black>=24.0",
+  "ruff>=0.1.0"
+]
 
 [build-system]
-requires = ["uv_build>=0.8.13,<0.9.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.0.0"]
+build-backend = "hatchling.build"
