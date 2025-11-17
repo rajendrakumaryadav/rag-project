@@ -1,4 +1,5 @@
-# LLM-PKG: Document Processing & QA Platform with React Frontend
+# LLM-PKG: Document Processing & QA Platform - Generated using GitHub Copilot + Visual Studio Code
+
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.103+-green.svg)
@@ -7,7 +8,9 @@
 ![LangChain](https://img.shields.io/badge/LangChain-1.0+-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-A practical document processing and question-answering platform with a modern React frontend, user authentication, and PostgreSQL + pgvector for vector storage. The project combines document scanning, LangChain, and LangGraph to provide retrieval-augmented generation (RAG) workflows for exploring and querying document collections.
+A full-featured document processing and question-answering platform that combines document scanning (Docling-like), LangChain, and LangGraph to create an intelligent document analysis system.
+
+<img width="1920" height="1008" alt="image" src="https://github.com/user-attachments/assets/c44e488e-1dd3-4fdb-aa81-07417ab39078" />
 
 ## Quick highlights
 
