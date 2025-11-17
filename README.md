@@ -1,169 +1,161 @@
 # LLM-PKG: Document Processing & QA Platform - Generated using GitHub Copilot + Visual Studio Code
 
+
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.103+-green.svg)
+![React](https://img.shields.io/badge/React-18+-blue.svg)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector%20%28pg16%29-blue.svg)
 ![LangChain](https://img.shields.io/badge/LangChain-1.0+-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 A full-featured document processing and question-answering platform that combines document scanning (Docling-like), LangChain, and LangGraph to create an intelligent document analysis system.
+
 <img width="1920" height="1008" alt="image" src="https://github.com/user-attachments/assets/c44e488e-1dd3-4fdb-aa81-07417ab39078" />
 
-## 🌟 Features
+## Quick highlights
 
-- **📄 Document Upload & Processing**: Upload PDF, TXT, and Markdown files
-- **🔍 Docling-like Document Scanning**: Advanced document parsing with text extraction, metadata, and structure analysis
-- **💬 Intelligent Q&A**: Ask questions about your documents using RAG (Retrieval-Augmented Generation)
-- **🔌 Multi-Provider Support**: Configurable LLM providers (OpenAI, Azure OpenAI, Ollama, OpenRouter)
-- **🚀 FastAPI REST API**: Production-ready API with automatic documentation
-- **💻 CLI Interface**: Interactive command-line tool for easy interaction
-- **📊 LangGraph Workflows**: Structured AI workflows for complex document analysis
-- **⚙️ Dynamic Configuration**: TOML-based configuration with hot-reload support
+- Upload and process PDFs, TXT and Markdown
+- Docling-like document scanning (structure, metadata, tables)
+- RAG-powered Q&A using configurable LLM providers (OpenAI, Azure, Ollama, OpenRouter)
+- PostgreSQL with pgvector for embeddings and retrieval (recommended over legacy FAISS)
+- FastAPI backend + React frontend (Dockerized)
+- CLI for quick interactions and batch processing
 
-## 🏗️ Architecture
+## Table of Contents
+
+- Features
+- Architecture
+- Prerequisites
+- Quick Start (Docker recommended)
+- Development setup
+- Usage examples (API / Python / CLI)
+- Configuration
+- Project structure
+- Troubleshooting & tests
+
+## Features
+
+- Document upload & processing: PDF, TXT, MD
+- Docling-like scanning: headings, lists, tables, layout and metadata
+- Retrieval-Augmented Generation (RAG) with LangChain and LangGraph
+- Multi-provider LLM support (OpenAI, Azure OpenAI, Ollama, OpenRouter)
+- JWT authentication and user management
+- Vector storage using PostgreSQL + pgvector
+- Docker Compose for easy deployment (backend, frontend, nginx, postgres)
+
+## Architecture (high level)
 
 ```
-┌─────────────────┐
-│  FastAPI Server │ ← REST API
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │   CLI   │ ← Command Line Interface
-    └────┬────┘
-         │
-┌────────┴─────────────────────────┐
-│     Application Layer             │
-│  ┌──────────┐  ┌───────────┐    │
-│  │ QA Engine│  │ Doc Proc  │    │
-│  └──────────┘  └───────────┘    │
-└────────┬─────────────────────────┘
-         │
-┌────────┴─────────────────────────┐
-│   LangChain & LangGraph Layer    │
-│  ┌──────┐ ┌────────┐ ┌────────┐ │
-│  │ RAG  │ │ Chains │ │ Graphs │ │
-│  └──────┘ └────────┘ └────────┘ │
-└────────┬─────────────────────────┘
-         │
-┌────────┴─────────────────────────┐
-│    LLM Providers Layer           │
-│  ┌────────┐ ┌──────┐ ┌────────┐ │
-│  │ OpenAI │ │ Azure│ │ Ollama │ │
-│  └────────┘ └──────┘ └────────┘ │
-└──────────────────────────────────┘
+Frontend (React)  <->  Nginx  <->  FastAPI backend  <->  PostgreSQL (pgvector)
+                                          ^
+                                          |-- LangChain / LangGraph / LLM providers
 ```
 
-## 📋 Prerequisites
+## Prerequisites
 
-- Python 3.11 or higher
-- uv (Python package manager)
+- Python 3.11+
+- Node.js 18+ (for frontend development)
+- Docker & Docker Compose (recommended)
+- uv (optional; used by the project's setup scripts)
 - Optional: Ollama for local LLM inference
 
-## 🚀 Quick Start
+## Quick Start (Docker - recommended)
 
-### 1. Install uv (if not already installed)
+1. Clone and prepare the project root:
 
 ```bash
-# On macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# On Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+cd /home/rajendrayadav/Documents/projects/llm-pkg
+cp .env.example .env
+# Edit .env to add API keys and secrets
 ```
 
-### 2. Clone and Setup
+2. Start services with Docker Compose (build on first run):
 
 ```bash
-# Navigate to the project root
-cd /home/rajendrayadav/Documents/projects/llm-pkg
+# from project root
+docker-compose up --build
+# or in background
+docker-compose up -d --build
+```
 
-# Create virtual environment and install dependencies
+3. Access the services:
+
+- Frontend: http://localhost:8080
+- API: http://localhost:8080/api
+- API docs (Swagger/OpenAPI): http://localhost:8080/api/docs
+- Health: http://localhost:8080/health
+
+Notes:
+- If you change configuration files, restart the backend container or call the config reload endpoint: POST /api/config/reload
+- The `.env` file is the primary place to provide provider API keys. Do not commit it to git.
+
+## Development setup (local)
+
+1. Create a Python virtualenv and install the package:
+
+```bash
+# Using uv (project uses uv in scripts) or standard venv
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install the package in development mode
+source .venv/bin/activate
 uv pip install -e .
 ```
 
-### 3. Configure LLM Providers
-
-Edit `config/llm_config.toml` to add your API keys and configuration:
-
-```toml
-[default]
-provider = "openai"
-model = "gpt-4o"
-temperature = 0.2
-
-[openai]
-provider = "openai"
-model = "gpt-4o"
-api_key = "sk-your-openai-key-here"
-base_url = "https://api.openai.com/v1"
-
-[azure]
-provider = "azure_openai"
-resource_name = "your-azure-resource"
-deployment_id = "your-deployment-id"
-azure_api_key = "your-azure-key"
-model = "gpt-4o"
-temperature = 0.1
-
-[ollama]
-provider = "ollama"
-model = "llama3"
-host = "http://localhost:11434"
-```
-
-### 4. Run the Application
-
-#### Option A: FastAPI Server
+2. Install DB dependencies (if needed):
 
 ```bash
-# Start the server
+pip install pgvector alembic sqlalchemy psycopg2-binary
+```
+
+3. Start a local Postgres with pgvector support (docker recommended):
+
+The project uses the official pgvector Postgres image in `docker-compose.yml` (image: `pgvector/pgvector:pg16`). If you prefer to run Postgres locally for development, use the pgvector image which includes the pgvector extension preinstalled.
+
+```bash
+# Run pgvector-enabled Postgres (pg16)
+docker run -d --name pgvector-dev \
+  -e POSTGRES_DB=llm_pkg \
+  -e POSTGRES_USER=llm_user \
+  -e POSTGRES_PASSWORD=llm_password \
+  -p 5432:5432 pgvector/pgvector:pg16
+alembic upgrade head
+```
+
+4. Frontend development (optional):
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+5. Run backend locally:
+
+```bash
 uvicorn llm_pkg.app:app --reload
-
-# Or use the convenience script
-llm-pkg-server
 ```
 
-Visit:
-- API: http://localhost:8000
-- Interactive Docs: http://localhost:8000/docs
-- Alternative Docs: http://localhost:8000/redoc
+Visit frontend at http://localhost:3000 and API at http://localhost:8000 when running locally.
 
-#### Option B: CLI Tool
+## Usage examples
 
-```bash
-# Interactive mode
-llm-pkg
+API examples (replace host/port depending on your setup):
 
-# Or use direct commands
-llm-pkg upload document.pdf
-llm-pkg list
-llm-pkg query "What is this document about?"
-llm-pkg config
-```
-
-## 📚 Usage Examples
-
-### REST API Examples
-
-#### Upload a Document
+Upload a document:
 
 ```bash
 curl -X POST "http://localhost:8000/upload" \
   -H "accept: application/json" \
   -H "Content-Type: multipart/form-data" \
-  -F "file=@document.pdf"
+  -F "file=@/path/to/document.pdf"
 ```
 
-#### List Documents
+List documents:
 
 ```bash
 curl -X GET "http://localhost:8000/documents"
 ```
 
-#### Query Documents
+Query documents (RAG):
 
 ```bash
 curl -X POST "http://localhost:8000/query" \
@@ -172,19 +164,7 @@ curl -X POST "http://localhost:8000/query" \
   -d "provider=openai"
 ```
 
-#### Get Configuration
-
-```bash
-curl -X GET "http://localhost:8000/config"
-```
-
-#### Reload Configuration
-
-```bash
-curl -X POST "http://localhost:8000/config/reload"
-```
-
-### Python API Examples
+Python usage (example):
 
 ```python
 from llm_pkg.config import llm_loader, graph_manager
@@ -196,313 +176,130 @@ from pathlib import Path
 doc_processor = DocumentProcessor()
 qa_engine = QAEngine(llm_loader, graph_manager)
 
-# Process a document
 async def process_doc():
     file_path = Path("document.pdf")
     processed = await doc_processor.process_document(file_path)
-    print(f"Processed: {processed['summary']}")
-
-# Query documents
-async def ask_question():
-    result = await qa_engine.query(
-        question="What is the main topic?",
-        provider="openai"
-    )
-    print(f"Answer: {result['answer']}")
+    print(processed.get("summary"))
 ```
 
-### CLI Examples
+CLI examples:
 
 ```bash
-# Start interactive mode
+# Interactive mode
 llm-pkg
-
-# In interactive mode:
-llm-pkg> upload research_paper.pdf
-llm-pkg> list
-llm-pkg> query What are the key findings?
-llm-pkg> config
-llm-pkg> exit
 
 # Direct commands
 llm-pkg upload report.pdf
 llm-pkg query "Summarize the executive summary"
 ```
 
-## 🔧 Configuration
+## Configuration
 
-### LLM Provider Configuration
+Primary configuration for providers lives in `config/llm_config.toml`. You can also use environment variables (see `.env.example`).
 
-The `config/llm_config.toml` file supports multiple providers:
+Key configuration tips:
+- Use environment variables for API keys to avoid committing secrets
+- For local development, Ollama provides a convenient local model server
+- In production, prefer robust providers (Azure/OpenAI) and configure rate limits and retries
 
-#### OpenAI
+See `CONFIGURATION.md` and `OPENROUTER_GUIDE.md` for provider-specific instructions.
 
-```toml
-[openai]
-provider = "openai"
-model = "gpt-4o"
-api_key = "sk-..."
-temperature = 0.7
-max_tokens = 2000
-```
+## Project structure
 
-#### Azure OpenAI
-
-```toml
-[azure]
-provider = "azure_openai"
-resource_name = "my-azure-resource"
-deployment_id = "gpt-4-deployment"
-azure_api_key = "..."
-model = "gpt-4"
-api_version = "2024-02-01"
-```
-
-#### Ollama (Local)
-
-```toml
-[ollama]
-provider = "ollama"
-model = "llama3"
-host = "http://localhost:11434"
-temperature = 0.5
-```
-
-#### OpenRouter (Multi-Provider)
-
-```toml
-[openrouter]
-provider = "openai"
-model = "openai/gpt-4o"  # Can use any OpenRouter model
-api_key = "sk-or-v1-..."
-base_url = "https://openrouter.ai/api/v1"
-temperature = 0.7
-```
-
-**See [OPENROUTER_GUIDE.md](OPENROUTER_GUIDE.md) for detailed setup.**
-
-### Application Settings
-
-```toml
-[metadata]
-upload_dir = "data/uploads"
-document_store = "pdfplumber"
-doc_scan_tool = "docling-mimic"
-max_file_size_mb = 50
-
-[logging]
-level = "INFO"
-formatter = "rich"
-```
-
-## 📁 Project Structure
+A high-level view of important files and directories:
 
 ```
-llm-pkg/
-├── config/
-│   └── llm_config.toml          # LLM provider configuration
-├── data/
-│   └── uploads/                 # Uploaded documents storage
-├── examples/
-│   └── examples.py              # Usage examples (scripts)
-├── tools/
-│   └── openrouter_test.py       # Utility script for OpenRouter testing
-├── notebooks/                   # (optional) Jupyter notebooks
-├── src/
-│   └── llm_pkg/
-│       ├── __init__.py
-│       ├── app.py               # FastAPI application
-│       ├── cli.py               # CLI interface
-│       ├── config.py            # Configuration loader
-│       ├── document_processor.py# Document scanning & processing
-│       ├── qa_engine.py         # Q&A with LangChain/LangGraph
-│       └── storage.py           # Document storage management
-├── tests/
-│   └── test_basic.py            # Unit tests
-├── pyproject.toml               # Project configuration
-└── README.md                    # This file
+src/llm_pkg/          # Python package (FastAPI app, processors, QA engine, CLI)
+frontend/             # React frontend
+config/               # llm_config.toml and related config
+data/uploads/         # Uploaded files
+alembic/              # DB migrations
+Dockerfile & docker-compose.yml
 ```
 
-## 🔍 Document Processing Features
+## CLI (Command-line interface)
 
-### Supported Formats
+This project includes a small CLI tool that lets you interact with the app from the command line. The console script is installed as `llm-pkg` when you install the package in editable mode or as a packaged install.
 
-- **PDF**: Full text extraction, table detection, metadata, page-by-page analysis
-- **TXT**: Plain text processing with structure analysis
-- **MD**: Markdown files with heading detection
-
-### Extraction Capabilities
-
-- **Text**: Complete text extraction with page awareness
-- **Metadata**: Author, creation date, page count, file size
-- **Structure**: Headings, lists, sections, tables
-- **Layout**: Word positions, page dimensions
-- **Tables**: Table detection and extraction
-
-### Docling-like Features
-
-The document processor mimics Docling's capabilities:
-
-1. **Multi-layer extraction**: Text, structure, and metadata
-2. **Layout analysis**: Position-aware text extraction
-3. **Table detection**: Automatic table identification
-4. **Semantic structure**: Heading and section detection
-5. **Page-level processing**: Per-page analysis and chunking
-
-## 💡 LangChain & LangGraph Integration
-
-### RAG (Retrieval-Augmented Generation)
-
-The QA engine implements RAG pattern:
-
-1. **Document Loading**: Load and process documents
-2. **Chunking**: Split documents into manageable chunks
-3. **Embedding**: Create vector embeddings
-4. **Retrieval**: Find relevant chunks for queries
-5. **Generation**: Generate answers using LLM
-
-### LangGraph Workflow
-
-```python
-# QA workflow structure
-retrieve → generate → answer
-    ↓
-[documents] → [context] → [LLM] → [answer]
-```
-
-### Customization
-
-Extend the QA engine with custom nodes:
-
-```python
-from llm_pkg.qa_engine import QAEngine
-
-# Add custom processing nodes
-workflow.add_node("summarize", summarize_node)
-workflow.add_node("fact_check", fact_check_node)
-```
-
-## 🧪 Testing
+Installation (local development):
 
 ```bash
-# Install dev dependencies
-uv pip install -e ".[dev]"
+# Create and activate virtualenv
+python -m venv .venv
+source .venv/bin/activate
 
-# Run tests
-pytest
-
-# Run with coverage
-pytest --cov=llm_pkg --cov-report=html
+# Install the package in editable mode (creates the `llm-pkg` console script)
+pip install -e .
 ```
 
-## 🔒 Security Best Practices
-
-1. **API Keys**: Never commit API keys to version control
-2. **Environment Variables**: Use `.env` files for sensitive data
-3. **File Upload**: Implement file size limits and type validation
-4. **Authentication**: Add authentication for production deployments
-5. **Rate Limiting**: Implement rate limiting for API endpoints
-
-## 🚀 Production Deployment
-
-### Using Docker
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install uv
-RUN pip install uv
-
-# Copy project files
-COPY . .
-
-# Install dependencies
-RUN uv pip install --system .
-
-# Expose port
-EXPOSE 8000
-
-# Run application
-CMD ["uvicorn", "llm_pkg.app:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Environment Variables
+Run the CLI (interactive mode):
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export AZURE_OPENAI_KEY="..."
-export LOG_LEVEL="INFO"
+# Start interactive mode
+llm-pkg
+# Or, without installing the console script
+python -m llm_pkg.cli
 ```
 
-### Systemd Service
+Direct (non-interactive) commands:
 
-```ini
-[Unit]
-Description=LLM-PKG Service
-After=network.target
+```bash
+# Upload a file (local path)
+llm-pkg upload path/to/document.pdf
 
-[Service]
-Type=simple
-User=llm-pkg
-WorkingDirectory=/opt/llm-pkg
-ExecStart=/opt/llm-pkg/.venv/bin/uvicorn llm_pkg.app:app --host 0.0.0.0 --port 8000
-Restart=always
+# List uploaded documents
+llm-pkg list
 
-[Install]
-WantedBy=multi-user.target
+# Query (RAG)
+llm-pkg query "Summarize the executive summary"
+
+# Show configured LLM providers
+llm-pkg config
 ```
 
-## 📊 Performance Tips
+Running the CLI inside the backend container (Docker Compose):
 
-1. **Vector Store**: Use persistent vector stores (FAISS, Pinecone) for large datasets
-2. **Caching**: Implement response caching for repeated queries
-3. **Async**: All I/O operations are async for better performance
-4. **Chunking**: Optimize chunk size based on your documents
-5. **Batch Processing**: Process multiple documents in parallel
+```bash
+# List documents inside the running backend container
+docker-compose exec backend llm-pkg list
 
-## 🤝 Contributing
+# Upload a file that is mounted into the container at /app/data/uploads
+# (copy the file into ./data/uploads on the host so it's available inside the container)
+docker-compose exec backend llm-pkg upload /app/data/uploads/report.pdf
 
-Contributions are welcome! Please follow these steps:
+# Run a query inside the container
+docker-compose exec backend llm-pkg query "What are the key points?"
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Notes & tips:
+- The `llm-pkg` console script is defined in `pyproject.toml` under `[project.scripts]` and points to `llm_pkg.cli:main`.
+- When running commands that access the database or storage, ensure the backend or Postgres containers are running (if using Docker Compose) or that your local DB is reachable and migrations have been applied (`alembic upgrade head`).
+- Uploads are persisted to `./data/uploads` on the host (mounted into the backend at `/app/data/uploads` by `docker-compose.yml`).
 
-## 📝 License
+## Tests & development commands
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Run unit tests:
 
-## 🙏 Acknowledgments
+```bash
+make test
+```
 
-- **LangChain**: For the powerful LLM framework
-- **LangGraph**: For workflow orchestration
-- **FastAPI**: For the excellent web framework
-- **Docling**: Inspiration for document processing
-- **Rich**: For beautiful CLI output
+Development helpers are available in the `Makefile` (format, lint, test, run).
 
-## 📧 Contact
+## Troubleshooting
 
-Rajendra Yadav - rajendra@example.com
+- API Key errors: re-check `.env` / `config/llm_config.toml` values
+- Ollama connection refused: run `ollama serve` and verify host/port
+- Database errors: ensure Postgres is reachable and migrations have run
 
-Project Link: [https://github.com/rajendrayadav/llm-pkg](https://github.com/rajendrayadav/llm-pkg)
+## Contribution & License
 
-## 🗺️ Roadmap
+- License: MIT (see `LICENSE`)
+- Contributions welcome: open issues or PRs
 
-- [ ] Support for more document formats (DOCX, HTML, etc.)
-- [ ] Advanced table extraction and analysis
-- [ ] Multi-modal support (images, charts)
-- [ ] Document comparison and diff
-- [ ] Batch processing API
-- [ ] WebSocket support for streaming responses
-- [ ] Integration with more vector databases
-- [ ] Custom embedding models support
-- [ ] Multi-language support
-- [ ] Advanced caching strategies
+I made the following precise edits to match the runtime defined in `docker-compose.yml` and `nginx.conf`:
 
----
-
-**Built with ❤️ using uv, LangChain, and LangGraph**
+- Replaced references to `http://localhost` (frontend) with `http://localhost:8080` to match nginx host port mapping.
+- Clarified API endpoints when using Docker Compose: `http://localhost:8080/api` (via nginx proxy) and direct backend URL `http://localhost:8000` for when you access the backend container or run locally.
+- Mentioned service names (`postgres`, `backend`, `nginx`) and that `backend` is reachable inside Docker at `backend:8000` and that nginx proxies `/api/` to `backend:8000`.
+- Noted health check path: `http://localhost:8080/health` (proxied to backend `/health`).

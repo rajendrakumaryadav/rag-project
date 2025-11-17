@@ -1,6 +1,16 @@
 # Dockerfile for LLM-PKG
 FROM python:3.11-slim
 
+# Build arguments for API keys
+ARG GOOGLE_API_KEY
+ARG OPENAI_API_KEY
+ARG AZURE_OPENAI_API_KEY
+
+# Set environment variables from build args
+ENV GOOGLE_API_KEY=${GOOGLE_API_KEY}
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
+ENV AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+
 # Set working directory
 WORKDIR /app
 
@@ -14,7 +24,10 @@ RUN pip install uv
 
 # Copy project files
 COPY pyproject.toml .
-COPY llm_pkg/ llm_pkg/
+COPY README.md .
+COPY alembic.ini .
+COPY alembic/ alembic/
+COPY src/ src/
 COPY config/ config/
 COPY data/ data/
 

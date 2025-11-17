@@ -10,13 +10,17 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from rich.logging import RichHandler
 
+from llm_pkg.auth.router import router as auth_router
+from llm_pkg.chat_router import router as chat_router
 from llm_pkg.config import graph_manager, llm_loader
+from llm_pkg.database.models import create_tables
 from llm_pkg.document_processor import DocumentProcessor
 from llm_pkg.qa_engine import QAEngine
-from llm_pkg.storage import STORAGE_DIR, list_document_metadata, save_document
+from llm_pkg.storage import STORAGE_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -34,9 +38,27 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API routers
+app.include_router(auth_router)
+app.include_router(chat_router)
+
 # Initialize components
 doc_processor = DocumentProcessor()
-qa_engine = QAEngine(llm_loader, graph_manager)
+qa_engine = QAEngine(
+    llm_loader, graph_manager
+)  # Global instance for non-auth endpoints
 
 
 @app.get("/")
@@ -59,53 +81,32 @@ async def health_check() -> dict[str, str]:
 @app.post("/upload")
 async def upload_document(file: UploadFile = File(...)) -> JSONResponse:
     """
-    Upload a document for processing.
-
-    Supports: PDF, TXT, DOCX, and other text-based formats.
+    DEPRECATED: Upload a document for processing.
+    
+    This endpoint is deprecated and should not be used.
+    Use POST /chat/upload-document instead for proper conversation isolation.
+    
+    This endpoint does not enforce conversation-specific isolation and may cause
+    documents to bleed across conversations.
     """
-    try:
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="Filename is required")
-
-        # Read file content
-        content = await file.read()
-
-        # Save document
-        file_path = save_document(content, file.filename)
-        logger.info(f"Document uploaded: {file.filename}")
-
-        # Process document (Docling-like scanning)
-        processed_data = await doc_processor.process_document(file_path)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "message": "Document uploaded and processed successfully",
-                "filename": file.filename,
-                "path": str(file_path),
-                "processed_data": processed_data,
-            },
-        )
-    except Exception as e:
-        logger.error(f"Error uploading document: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(
+        status_code=410,  # Gone
+        detail="This endpoint is deprecated. Please use POST /chat/upload-document with conversation_id instead."
+    )
 
 
 @app.get("/documents")
 async def list_documents() -> JSONResponse:
-    """List all uploaded documents with metadata."""
-    try:
-        docs = list_document_metadata()
-        return JSONResponse(
-            status_code=200,
-            content={
-                "count": len(docs),
-                "documents": [doc.to_dict() for doc in docs],
-            },
-        )
-    except Exception as e:
-        logger.error(f"Error listing documents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """
+    DEPRECATED: List all uploaded documents with metadata.
+    
+    This endpoint is deprecated and should not be used.
+    Use GET /chat/documents?conversation_id={id} instead for proper conversation isolation.
+    """
+    raise HTTPException(
+        status_code=410,  # Gone
+        detail="This endpoint is deprecated. Please use GET /chat/documents with conversation_id instead."
+    )
 
 
 @app.post("/query")
@@ -115,39 +116,15 @@ async def query_documents(
     document_name: str | None = Form(None),
 ) -> JSONResponse:
     """
-    Query documents using LangChain/LangGraph.
-
-    Args:
-        question: The question to ask
-        provider: Optional provider name (openai, azure, ollama)
-        document_name: Optional specific document to query
+    DEPRECATED: Query documents using LangChain/LangGraph.
+    
+    This endpoint is deprecated and should not be used.
+    Use POST /chat/send instead for proper conversation isolation and tracking.
     """
-    try:
-        if not question:
-            raise HTTPException(status_code=400, detail="Question is required")
-
-        logger.info(f"Processing query: {question[:50]}...")
-
-        # Execute query using QA engine
-        result = await qa_engine.query(
-            question=question,
-            provider=provider,
-            document_name=document_name,
-        )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "question": question,
-                "answer": result["answer"],
-                "sources": result.get("sources", []),
-                "provider": result.get("provider"),
-                "metadata": result.get("metadata", {}),
-            },
-        )
-    except Exception as e:
-        logger.error(f"Error processing query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(
+        status_code=410,  # Gone
+        detail="This endpoint is deprecated. Please use POST /chat/send with conversation_id instead."
+    )
 
 
 @app.get("/config")
@@ -164,14 +141,18 @@ async def get_config() -> JSONResponse:
                     }
                     for name, cfg in llm_loader.providers.items()
                 },
-                "default": {
-                    "provider": llm_loader.default.provider
+                "default": (
+                    {
+                        "provider": (
+                            llm_loader.default.provider if llm_loader.default else None
+                        ),
+                        "model": (
+                            llm_loader.default.model if llm_loader.default else None
+                        ),
+                    }
                     if llm_loader.default
-                    else None,
-                    "model": llm_loader.default.model if llm_loader.default else None,
-                }
-                if llm_loader.default
-                else None,
+                    else None
+                ),
             },
         )
     except Exception as e:
@@ -220,6 +201,23 @@ async def delete_document(filename: str) -> JSONResponse:
 async def startup_event():
     """Initialize components on startup."""
     logger.info("🚀 LLM-PKG starting up...")
+
+    # Probe database connection without crashing the app if unavailable
+    from sqlalchemy import text
+    from llm_pkg.database.models import engine
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("📊 Database connection OK")
+    except Exception as e:
+        logger.warning(
+            "⚠️  Database is not reachable right now. The API will start, "
+            "but endpoints that require the database will fail until it is available. "
+            "Start Postgres (e.g., docker-compose up -d postgres) and run migrations (alembic upgrade head)."
+        )
+        logger.warning(f"DB connection error: {e}")
+
     logger.info(f"📁 Storage directory: {STORAGE_DIR}")
     logger.info(f"⚙️  Loaded {len(llm_loader.providers)} provider(s)")
     logger.info("✅ Application ready!")
