@@ -27,7 +27,7 @@ Base = declarative_base()
 
 # Database connection
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://user:password@localhost:5432/llm_pkg"
+    "DATABASE_URL", "postgresql://llm_user:llm_password@localhost:5432/llm_pkg"
 )
 
 engine = create_engine(DATABASE_URL)
@@ -128,6 +128,23 @@ class ConversationDocument(Base):
 
     # Relationships
     conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="documents")
+    document: Mapped["Document"] = relationship("Document")
+
+
+class MessageDocumentMatch(Base):
+    """Track which documents were used to generate which messages."""
+
+    __tablename__ = "message_document_matches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(Integer, ForeignKey("messages.id"), nullable=False)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    matched_content = Column(Text)  # The specific content that was matched/used
+    relevance_score = Column(String)  # Similarity score
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    message: Mapped["Message"] = relationship("Message")
     document: Mapped["Document"] = relationship("Document")
 
 

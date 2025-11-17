@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message } from '../../api/client';
 import { User, Bot, FileText, ExternalLink } from 'lucide-react';
+import DocumentPreview from './DocumentPreview';
 
 interface MessageListProps {
   messages: Message[];
 }
 
 const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+  const [previewDocumentId, setPreviewDocumentId] = useState<number | null>(null);
+
   if (messages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -119,6 +122,14 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
           </div>
         </div>
       ))}
+
+      {/* Document Preview Modal */}
+      {previewDocumentId && (
+        <DocumentPreview
+          documentId={previewDocumentId}
+          onClose={() => setPreviewDocumentId(null)}
+        />
+      )}
     </div>
   );
 };

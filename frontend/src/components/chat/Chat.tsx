@@ -79,17 +79,25 @@ const Chat: React.FC = () => {
         conversation_id: currentConversation?.id,
       });
 
-      // Update current conversation if new
+      // Update current conversation if new or changed
       if (!currentConversation || currentConversation.id !== response.conversation_id) {
         await loadConversations();
-        const newConv = conversations.find(c => c.id === response.conversation_id) ||
-                       await chatAPI.listConversations().then(convs =>
-                         convs.find(c => c.id === response.conversation_id)
-                       );
-        if (newConv) setCurrentConversation(newConv);
+        const updatedConv = await chatAPI.listConversations().then(convs =>
+          convs.find(c => c.id === response.conversation_id)
+        );
+        if (updatedConv) setCurrentConversation(updatedConv);
+      } else {
+        // Reload conversation to get updated title if it was auto-generated
+        const updatedConv = await chatAPI.listConversations().then(convs =>
+          convs.find(c => c.id === response.conversation_id)
+        );
+        if (updatedConv && updatedConv.title !== currentConversation.title) {
+          setCurrentConversation(updatedConv);
+        }
       }
 
-      // Reload messages
+      // Reload conversations list and messages
+      await loadConversations();
       await loadMessages(response.conversation_id);
       
       // Update the last message with sources from the response
@@ -113,9 +121,37 @@ const Chat: React.FC = () => {
     }
   };
 
-  const handleNewConversation = () => {
-    setCurrentConversation(null);
-    setMessages([]);
+  const handleNewConversation = async () => {
+    try {
+      // Create a new conversation immediately
+      const newConv = await chatAPI.createConversation({
+        title: 'New Conversation',
+        provider: selectedProvider !== 'default' ? selectedProvider : 'openai',
+        model: getModelForProvider(selectedProvider !== 'default' ? selectedProvider : 'openai'),
+      });
+
+      // Set as current conversation
+      setCurrentConversation(newConv);
+      setMessages([]);
+
+      // Reload conversations list
+      await loadConversations();
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+      // Fallback to old behavior
+      setCurrentConversation(null);
+      setMessages([]);
+    }
+  };
+
+  const getModelForProvider = (provider: string): string => {
+    const providerModels: Record<string, string> = {
+      'openai': 'gpt-4o',
+      'gemini': 'gemini-pro',
+      'anthropic': 'claude-3-opus-20240229',
+      'default': 'gpt-4o',
+    };
+    return providerModels[provider] || providerModels['openai'];
   };
 
   const handleSelectConversation = (conversation: Conversation) => {
@@ -231,7 +267,10 @@ const Chat: React.FC = () => {
         {/* Document Upload Section */}
         {!sidebarCollapsed && (
           <div className="p-4 border-t border-gray-200/50">
-            <DocumentUpload onUploadComplete={loadConversations} />
+            <DocumentUpload
+              conversationId={currentConversation?.id || null}
+              onUploadComplete={loadConversations}
+            />
           </div>
         )}
       </div>

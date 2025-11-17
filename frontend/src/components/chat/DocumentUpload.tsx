@@ -1,42 +1,64 @@
-import React, { useState, useRef } from 'react';
-import { Upload, File, X, Check, AlertCircle, FileText, Trash2 } from 'lucide-react';
-import { documentAPI, Document } from '../../api/client';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Upload, File, Check, AlertCircle, FileText, Eye } from 'lucide-react';
+import { chatAPI } from '../../api/client';
+import DocumentPreview from './DocumentPreview';
 
 interface DocumentUploadProps {
+  conversationId: number | null;
   onUploadComplete?: () => void;
 }
 
-const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadComplete }) => {
+const DocumentUpload: React.FC<DocumentUploadProps> = ({ conversationId, onUploadComplete }) => {
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
   const [showDocuments, setShowDocuments] = useState(false);
   const [loadingDocs, setLoadingDocs] = useState(false);
+  const [previewDocumentId, setPreviewDocumentId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
+    if (!conversationId) return;
+
     setLoadingDocs(true);
     try {
-      const response = await documentAPI.list();
-      setDocuments(response.documents);
+      const docs = await chatAPI.listChatDocuments(conversationId);
+      setDocuments(docs);
     } catch (error) {
       console.error('Failed to load documents:', error);
+      setDocuments([]);
     } finally {
       setLoadingDocs(false);
     }
-  };
+  }, [conversationId]);
+
+  // Load documents when conversation changes or when showing documents
+  useEffect(() => {
+    if (showDocuments && conversationId) {
+      loadDocuments();
+    } else if (!conversationId) {
+      setDocuments([]);
+      setShowDocuments(false);
+    }
+  }, [conversationId, showDocuments, loadDocuments]);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!conversationId) {
+      setUploadError('Please select or create a conversation first');
+      setTimeout(() => setUploadError(null), 3000);
+      return;
+    }
 
     setUploading(true);
     setUploadSuccess(false);
     setUploadError(null);
 
     try {
-      await documentAPI.upload(file);
+      await chatAPI.uploadDocument(file, conversationId);
       setUploadSuccess(true);
       setTimeout(() => setUploadSuccess(false), 3000);
       onUploadComplete?.();
@@ -56,30 +78,19 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadComplete }) => 
     }
   };
 
-  const handleDelete = async (filename: string) => {
-    if (!window.confirm(`Delete "${filename}"?`)) return;
-
-    try {
-      await documentAPI.delete(filename);
-      await loadDocuments();
-    } catch (error) {
-      console.error('Failed to delete document:', error);
-      alert('Failed to delete document');
-    }
-  };
-
   const toggleDocuments = async () => {
+    if (!conversationId) {
+      setUploadError('Please select a conversation first');
+      setTimeout(() => setUploadError(null), 3000);
+      return;
+    }
+
     if (!showDocuments) {
       await loadDocuments();
     }
     setShowDocuments(!showDocuments);
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
 
   return (
     <div className="space-y-3">
@@ -91,12 +102,13 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadComplete }) => 
           onChange={handleFileSelect}
           className="hidden"
           accept=".pdf,.txt,.docx,.doc,.md"
-          disabled={uploading}
+          disabled={uploading || !conversationId}
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
+          disabled={uploading || !conversationId}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          title={!conversationId ? 'Select a conversation first' : ''}
         >
           {uploading ? (
             <>
@@ -111,7 +123,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadComplete }) => 
           ) : (
             <>
               <Upload className="h-5 w-5" />
-              <span>Upload Document</span>
+              <span>{conversationId ? 'Upload Document' : 'Select Conversation'}</span>
             </>
           )}
         </button>
@@ -150,7 +162,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadComplete }) => 
             <div className="space-y-2">
               {documents.map((doc, index) => (
                 <div
-                  key={index}
+                  key={doc.id || index}
                   className="group flex items-start justify-between gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:border-emerald-200 hover:shadow-md transition-all duration-300"
                 >
                   <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -159,27 +171,35 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadComplete }) => 
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 truncate text-sm">
-                        {doc.name}
+                        {doc.filename}
                       </p>
                       <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                        <span>{formatFileSize(doc.size_bytes)}</span>
+                        <span>{doc.scope || 'conversation'}</span>
                         <span>•</span>
-                        <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span>
+                        <span>{new Date(doc.created_at).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </div>
                   <button
-                    onClick={() => handleDelete(doc.name)}
-                    className="opacity-0 group-hover:opacity-100 transition-all duration-300 p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transform hover:scale-110"
-                    title="Delete document"
+                    onClick={() => setPreviewDocumentId(doc.id)}
+                    className="flex-shrink-0 p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                    title="Preview document"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Eye className="h-4 w-4" />
                   </button>
                 </div>
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* Document Preview Modal */}
+      {previewDocumentId && (
+        <DocumentPreview
+          documentId={previewDocumentId}
+          onClose={() => setPreviewDocumentId(null)}
+        />
       )}
 
       {/* Info Text */}

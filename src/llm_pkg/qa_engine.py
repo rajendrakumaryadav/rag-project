@@ -11,7 +11,7 @@ from typing import Any, Optional
 import uuid
 
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.graph import END, StateGraph
@@ -20,7 +20,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from llm_pkg.config import LangGraphManager, LLMLoader
 from llm_pkg.document_processor import DocumentProcessor
-from llm_pkg.storage import STORAGE_DIR, PostgreSQLVectorStore, list_documents
+from llm_pkg.storage import PostgreSQLVectorStore
 
 logger = logging.getLogger("llm_pkg.qa_engine")
 
@@ -125,12 +125,19 @@ class QAEngine:
             metadatas = [chunk.metadata for chunk in chunks]
             self.vector_store.add_texts(texts, metadatas)
 
-            # Retrieve relevant chunks
-            relevant_docs = self.vector_store.similarity_search(question, k=3)
+            # Retrieve relevant chunks - use k=10 to get chunks from multiple documents
+            # This ensures we use all uploaded documents, not just one
+            k_value = min(10, len(chunks))  # Don't request more chunks than we have
+            relevant_docs = self.vector_store.similarity_search(question, k=k_value)
         except Exception as e:
             logger.warning(f"Vector store failed, using all document chunks: {e}")
             # Fallback: use first few chunks directly
-            relevant_docs = chunks[:3] if len(chunks) >= 3 else chunks
+            k_value = min(10, len(chunks))
+            relevant_docs = chunks[:k_value]
+
+        # Log which documents we're using
+        doc_sources = set([doc.metadata.get("source", "unknown") for doc in relevant_docs])
+        logger.info(f"Using {len(relevant_docs)} chunks from {len(doc_sources)} document(s): {doc_sources}")
 
         # Create context
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
@@ -157,20 +164,35 @@ class QAEngine:
         # Create prompt based on mode
         if use_agent_mode:
             # AI Agent mode - no context, just conversation
-            prompt = f"""You are a helpful AI assistant. Answer the user's question based on your knowledge and the conversation history.
+            prompt = f"""You are a helpful AI assistant. Answer the user's question directly using your general knowledge and the conversation history if available.
+
+DO NOT ask the user to upload or paste any documents or files. If the user references a specific file that is not available, say that you don't have access to the file and answer from your general knowledge instead.
 
 Question: {question}
 
 Answer:"""
         else:
-            # RAG mode - use context from documents
-            prompt = f"""Based on the following context, answer the question.
-If you cannot find the answer in the context, use your general knowledge but mention that the information is not from the provided documents.
+            # RAG mode - use context from documents (possibly multiple documents)
+            docs_in_context = state.get("documents", [])
+            doc_sources = set([doc.metadata.get("source", "unknown") for doc in docs_in_context])
+            
+            prompt = f"""You are an AI assistant helping the user with their question based on the uploaded documents.
 
-Context:
+I have provided context from {len(doc_sources)} document(s): {', '.join(doc_sources)}
+
+Please analyze ALL the provided context carefully and answer the question. Synthesize information from multiple documents if relevant. If the information is spread across different documents, combine them in your answer.
+
+Context from uploaded documents:
 {context}
 
 Question: {question}
+
+Instructions:
+- Use the context above to answer the question thoroughly
+- If information is found in the documents, cite which document(s) you're referencing
+- If the context doesn't fully answer the question, use your general knowledge to supplement
+- DO NOT ask the user to upload additional documents
+- Provide a clear, comprehensive answer
 
 Answer:"""
 
@@ -186,6 +208,32 @@ Answer:"""
         response = llm.invoke(prompt)
         answer = response.content if hasattr(response, "content") else str(response)
 
+        # If the model responds by asking the user to provide document contents (common when the user explicitly asks for the contents of a specific file),
+        # then automatically fallback to a strict general-knowledge response so the UI receives a useful answer instead of a request for upload.
+        answer_lower = answer.lower() if isinstance(answer, str) else ""
+        ask_for_upload_signals = [
+            "please provide",
+            "please paste",
+            "i need the text",
+            "provide the content",
+            "upload the",
+            "send the",
+            "paste the",
+            "can't access files",
+            "i don't have access to",
+        ]
+        if any(sig in answer_lower for sig in ask_for_upload_signals):
+            logger.info("LLM asked for document content; running strict general-knowledge fallback")
+            fallback_prompt = f"You are a helpful AI assistant. The user asked: {question}\n\nAnswer directly using your general knowledge. Do NOT ask the user to upload or paste any documents or files. If you don't know, give the best possible general answer."
+            try:
+                fallback_resp = llm.invoke(fallback_prompt)
+                fallback_answer = fallback_resp.content if hasattr(fallback_resp, "content") else str(fallback_resp)
+                # If fallback produced something different, use it
+                if fallback_answer and fallback_answer.strip():
+                    answer = fallback_answer
+            except Exception as e:
+                logger.warning(f"Fallback general-knowledge LLM call failed: {e}")
+
         state["answer"] = answer
         state["metadata"] = {
             "num_sources": len(state.get("documents", [])),
@@ -198,20 +246,21 @@ Answer:"""
     async def _load_documents(self, document_name: str | None = None) -> list[Document]:
         """Load and process documents (user and conversation specific)."""
         from llm_pkg.database.models import get_db, Document as DBDocument
+        from llm_pkg.storage import list_documents, read_document, STORAGE_DIR
 
         documents = []
         db = next(get_db())
         
         try:
-            # Query documents for this user and optionally conversation
+            # Query documents for this user and conversation
             query = db.query(DBDocument).filter(DBDocument.user_id == self.user_id)
             
             if self.conversation_id:
-                # Get conversation-specific documents or user documents without conversation
-                query = query.filter(
-                    (DBDocument.conversation_id == self.conversation_id) |
-                    (DBDocument.conversation_id == None)
-                )
+                # Get ONLY conversation-specific documents (strict isolation)
+                query = query.filter(DBDocument.conversation_id == self.conversation_id)
+            else:
+                # If no conversation_id, get only documents without a conversation
+                query = query.filter(DBDocument.conversation_id == None)
             
             if document_name:
                 query = query.filter(DBDocument.filename == document_name)
@@ -231,6 +280,22 @@ Answer:"""
                 
         finally:
             db.close()
+
+        # If no documents were found in DB, try to load files directly from the storage directory
+        if not documents:
+            try:
+                if STORAGE_DIR.exists():
+                    for path in list_documents():
+                        # Optionally filter by document_name
+                        if document_name and path.name != document_name:
+                            continue
+                        try:
+                            doc = read_document(path)
+                            documents.append(doc)
+                        except Exception as e:
+                            logger.warning(f"Failed to read document from storage: {path}: {e}")
+            except Exception as e:
+                logger.warning(f"Error listing storage documents: {e}")
 
         logger.info(f"Loaded {len(documents)} document(s) for user {self.user_id}, conversation {self.conversation_id}")
         return documents
@@ -281,8 +346,11 @@ Answer:"""
             "sources": [
                 {
                     "source": doc.metadata.get("source"),
+                    "filename": doc.metadata.get("source"),
+                    "id": doc.metadata.get("id"),
                     "page": doc.metadata.get("page"),
                     "content": doc.page_content[:200] + "...",
+                    "similarity": doc.metadata.get("similarity"),
                 }
                 for doc in result.get("documents", [])
             ],

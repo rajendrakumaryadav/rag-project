@@ -143,13 +143,11 @@ export const chatAPI = {
         await api.delete(`/chat/conversations/${conversationId}`);
     },
 
-    // New: Upload document with optional conversation link
-    uploadDocument: async (file: File, conversationId?: number): Promise<any> => {
+    // Upload document to a specific conversation
+    uploadDocument: async (file: File, conversationId: number): Promise<any> => {
         const formData = new FormData();
         formData.append('file', file);
-        if (conversationId) {
-            formData.append('conversation_id', conversationId.toString());
-        }
+        formData.append('conversation_id', conversationId.toString());
 
         const response = await api.post('/chat/upload-document', formData, {
             headers: {
@@ -159,10 +157,21 @@ export const chatAPI = {
         return response.data;
     },
 
-    // New: List documents for user or conversation
-    listChatDocuments: async (conversationId?: number): Promise<any[]> => {
-        const params = conversationId ? { conversation_id: conversationId } : {};
-        const response = await api.get('/chat/documents', { params });
+    // List documents for a specific conversation
+    listChatDocuments: async (conversationId: number): Promise<any[]> => {
+        const response = await api.get('/chat/documents', { params: { conversation_id: conversationId } });
+        return response.data;
+    },
+
+    // Get document preview with full content and usage stats
+    previewDocument: async (documentId: number): Promise<any> => {
+        const response = await api.get(`/chat/documents/${documentId}/preview`);
+        return response.data;
+    },
+
+    // Get documents that were used to generate a specific message
+    getMessageDocumentMatches: async (messageId: number): Promise<any[]> => {
+        const response = await api.get(`/chat/messages/${messageId}/document-matches`);
         return response.data;
     },
 };
