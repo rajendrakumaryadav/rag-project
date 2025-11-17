@@ -10,10 +10,14 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from rich.logging import RichHandler
 
+from llm_pkg.auth.router import router as auth_router
+from llm_pkg.chat_router import router as chat_router
 from llm_pkg.config import graph_manager, llm_loader
+from llm_pkg.database.models import create_tables
 from llm_pkg.document_processor import DocumentProcessor
 from llm_pkg.qa_engine import QAEngine
 from llm_pkg.storage import STORAGE_DIR, list_document_metadata, save_document
@@ -34,9 +38,27 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API routers
+app.include_router(auth_router)
+app.include_router(chat_router)
+
 # Initialize components
 doc_processor = DocumentProcessor()
-qa_engine = QAEngine(llm_loader, graph_manager)
+qa_engine = QAEngine(
+    llm_loader, graph_manager
+)  # Global instance for non-auth endpoints
 
 
 @app.get("/")
@@ -164,14 +186,18 @@ async def get_config() -> JSONResponse:
                     }
                     for name, cfg in llm_loader.providers.items()
                 },
-                "default": {
-                    "provider": llm_loader.default.provider
+                "default": (
+                    {
+                        "provider": (
+                            llm_loader.default.provider if llm_loader.default else None
+                        ),
+                        "model": (
+                            llm_loader.default.model if llm_loader.default else None
+                        ),
+                    }
                     if llm_loader.default
-                    else None,
-                    "model": llm_loader.default.model if llm_loader.default else None,
-                }
-                if llm_loader.default
-                else None,
+                    else None
+                ),
             },
         )
     except Exception as e:
@@ -220,6 +246,11 @@ async def delete_document(filename: str) -> JSONResponse:
 async def startup_event():
     """Initialize components on startup."""
     logger.info("🚀 LLM-PKG starting up...")
+
+    # Create database tables
+    create_tables()
+    logger.info("📊 Database tables created/verified")
+
     logger.info(f"📁 Storage directory: {STORAGE_DIR}")
     logger.info(f"⚙️  Loaded {len(llm_loader.providers)} provider(s)")
     logger.info("✅ Application ready!")

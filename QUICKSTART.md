@@ -1,242 +1,191 @@
 # Quick Start Guide
 
-Get up and running with LLM-PKG in 5 minutes!
+Get up and running with LLM-PKG in 5 minutes (Docker recommended).
+
+## What changed / why
+This guide has been updated to exactly reflect the runtime defined in the project's Docker files and nginx config. Specifically:
+- The backend service listens on port 8000 inside the container and is published to the host at 8000 by docker-compose.
+- Nginx listens on port 80 inside its container and is published to the host at 8080 by docker-compose; nginx proxies API requests from `/api/` to the backend upstream `backend:8000`.
+- The frontend build sets `REACT_APP_API_URL=/api` so the production build expects the proxied path.
+- Docker build args forwarded from `docker-compose.yml`: `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`.
 
 ## Prerequisites
 
-- Python 3.11+
-- Git (optional)
+- Python 3.11+ (for local development)
+- Node.js 18+ (for frontend development)
+- Docker & Docker Compose (recommended)
 - API key for at least one LLM provider (OpenAI, Azure, or Ollama)
 
 ## Installation
 
-### Option 1: Automated Setup (Recommended)
+### Option 1: Docker (Recommended)
 
 ```bash
-cd /home/rajendrayadav/Documents/projects/llm-pkg/src
-./setup.sh
+cd /home/rajendrayadav/Documents/projects/llm-pkg
+cp .env.example .env
+# Edit .env and add your API keys and SECRET_KEY
+# docker-compose uses environment variables and build args (OPENAI_API_KEY, AZURE_OPENAI_API_KEY, GOOGLE_API_KEY).
+docker-compose up --build
+# Or run in background:
+# docker-compose up -d --build
 ```
 
-### Option 2: Manual Setup
+Important runtime notes (from `docker-compose.yml`, `Dockerfile.nginx`, and `nginx.conf`):
+- Services in docker-compose:
+  - `postgres` (image: `pgvector/pgvector:pg16`), host port 5432 -> container 5432.
+  - `backend` (built from project Dockerfile), host port 8000 -> container 8000.
+  - `nginx` (built from `Dockerfile.nginx`), host port 8080 -> container 80.
+- Nginx upstream name for the backend is `backend:8000` (see `nginx.conf`).
+- Nginx proxies requests from the host path `/api/` to the backend (so production frontend uses `/api` as API base).
+- The frontend build sets `REACT_APP_API_URL=/api` in the nginx Dockerfile, so the production frontend expects the proxied path by default.
+- Data upload directory on the host is mounted into the backend at `./data/uploads:/app/data/uploads`.
+
+After containers are up:
+- Frontend (served by nginx): http://localhost:8080
+- API via nginx proxy (proxied path): http://localhost:8080/api
+- Swagger / OpenAPI docs via nginx: http://localhost:8080/api/docs
+- Health (proxied): http://localhost:8080/health
+
+If you run the backend directly (not via nginx), the backend listens on port 8000 inside the container and is published to the host at 8000 by the compose file:
+- Backend API direct: http://localhost:8000
+- Docs direct: http://localhost:8000/docs
+- Health direct: http://localhost:8000/health
+
+### Option 2: Local development (manual)
 
 ```bash
-# Install uv if not already installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Create virtual environment and install
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
 
-# Create virtual environment
-uv venv
-
-# Activate virtual environment
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-uv pip install -e .
+# Install DB-related packages (if needed)
+pip install pgvector alembic sqlalchemy psycopg2-binary
 ```
 
-## Configuration
-
-### 1. Set Up API Keys
-
-**For OpenAI:**
-```bash
-# Edit config/llm_config.toml
-# Add your OpenAI API key
-api_key = "sk-your-actual-key-here"
-```
-
-**For Ollama (Free, Local):**
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull a model
-ollama pull llama3
-
-# Config is already set for localhost
-```
-
-### 2. Verify Configuration
+Start a local Postgres (docker recommended):
 
 ```bash
-# Check configuration
-make config
-
-# Or using Python
-python -c "from llm_pkg.config import llm_loader; print(llm_loader.providers)"
+docker run -d --name postgres-dev \
+  -e POSTGRES_DB=llm_pkg \
+  -e POSTGRES_USER=llm_user \
+  -e POSTGRES_PASSWORD=llm_password \
+  -p 5432:5432 postgres:15
+alembic upgrade head
 ```
 
-## Running the Application
-
-### Option 1: Web Server (Recommended)
+Run frontend locally (optional):
 
 ```bash
-# Start the server
-make run
-
-# Or manually
-uvicorn llm_pkg.app:app --reload
+cd frontend
+npm install
+npm start
 ```
 
-Visit http://localhost:8000/docs for interactive API documentation.
-
-### Option 2: CLI Interface
+Run backend locally:
 
 ```bash
-# Interactive mode
-make cli
-
-# Or manually
-python -m llm_pkg.cli
-
-# Direct commands
-llm-pkg upload document.pdf
-llm-pkg query "What is this about?"
+uvicorn llm_pkg.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Option 3: Docker
-
-```bash
-# Build and run with Docker Compose
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
+Visit frontend at http://localhost:3000 (when running `npm start`) and backend API at http://localhost:8000.
 
 ## First Steps
 
-### 1. Upload a Document
+1. Upload a document (when using Docker + nginx host / proxied API):
 
-**Using API:**
 ```bash
-curl -X POST "http://localhost:8000/upload" \
+curl -X POST "http://localhost:8080/api/upload" \
+  -H "accept: application/json" \
   -F "file=@/path/to/document.pdf"
 ```
 
-**Using CLI:**
+If you're talking directly to the backend (no nginx proxy):
+
 ```bash
-llm-pkg upload document.pdf
+curl -X POST "http://localhost:8000/upload" -F "file=@/path/to/document.pdf"
 ```
 
-### 2. List Documents
+2. List documents (proxied and direct examples):
 
-**Using API:**
 ```bash
+# via nginx proxy
+curl http://localhost:8080/api/documents
+
+# direct to backend
 curl http://localhost:8000/documents
 ```
 
-**Using CLI:**
-```bash
-llm-pkg list
-```
+3. Query documents (RAG) — proxied and direct:
 
-### 3. Ask Questions
-
-**Using API:**
 ```bash
+# via nginx proxy
+curl -X POST "http://localhost:8080/api/query" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "question=What are the main topics?" -d "provider=openai"
+
+# direct to backend
 curl -X POST "http://localhost:8000/query" \
-  -F "question=What are the main topics?" \
-  -F "provider=openai"
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "question=What are the main topics?" -d "provider=openai"
 ```
 
-**Using CLI:**
-```bash
-llm-pkg query "What are the main topics?"
-```
-
-## Example Workflow
+## Example Workflow (Docker)
 
 ```bash
-# 1. Start the server
-make run
+# 1. Start all services
+docker-compose up --build
 
-# 2. In another terminal, upload a document
-curl -X POST "http://localhost:8000/upload" \
-  -F "file=@research_paper.pdf"
+# 2. Upload a document via nginx host (proxies to backend)
+curl -X POST "http://localhost:8080/api/upload" -F "file=@research_paper.pdf"
 
 # 3. Query the document
-curl -X POST "http://localhost:8000/query" \
-  -F "question=What are the key findings?" \
-  -F "provider=openai"
+curl -X POST "http://localhost:8080/api/query" -d "question=What are the key findings?" -d "provider=openai"
 
 # 4. View all documents
-curl http://localhost:8000/documents
+curl http://localhost:8080/api/documents
 ```
 
-## Interactive Examples
+## Build args, environment and other notes
 
-Run the included examples:
-
-```bash
-python examples.py
-```
-
-This will demonstrate:
-- Document upload and processing
-- Querying with different providers
-- Custom LangGraph workflows
-- Batch processing
+- `docker-compose.yml` forwards build args `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY` into the backend image build. Ensure these are present in your environment (or in a `.env` file) when running `docker-compose build`.
+- The backend `command` runs `alembic upgrade head` on startup and then starts `uvicorn llm_pkg.app:app --host 0.0.0.0 --port 8000` inside the container.
+- Host -> container port mappings in `docker-compose.yml`:
+  - postgres: 5432:5432
+  - backend: 8000:8000
+  - nginx: 8080:80
+- The host upload folder `./data/uploads` is mounted into the container at `/app/data/uploads`.
 
 ## Common Issues
 
-### "API Key Not Found"
-- Check `config/llm_config.toml` has your API key
-- Ensure quotes are correct: `api_key = "sk-..."`
-
-### "Connection Refused" (Ollama)
-- Start Ollama: `ollama serve`
-- Verify it's running: `curl http://localhost:11434`
-
-### "Module Not Found"
-- Activate virtual environment: `source .venv/bin/activate`
-- Reinstall: `uv pip install -e .`
+- "API Key Not Found": ensure API keys are present in `.env` or `config/llm_config.toml` and that the backend container has access to them via environment or build args. `docker-compose.yml` forwards several BUILD args and environment variables; check `.env` for values used by compose.
+- Ollama: start the daemon `ollama serve` and verify `curl http://localhost:11434` responds (if you enabled the optional ollama service).
+- Database: verify Postgres connectivity and run `alembic upgrade head` if migrations are missing. The `backend` service runs `alembic upgrade head` on start (see docker-compose `command`).
 
 ## Next Steps
 
-1. **Read the full documentation**: See [README.md](README.md)
-2. **Configure multiple providers**: See [CONFIGURATION.md](CONFIGURATION.md)
-3. **Explore the API**: Visit http://localhost:8000/docs
-4. **Run tests**: `make test`
-5. **Customize workflows**: Edit `llm_pkg/qa_engine.py`
+- Read `README.md` and `CONFIGURATION.md` for provider-specific instructions.
+- Try different providers and models.
+- Run the examples: `python examples.py`.
 
 ## Useful Commands
 
 ```bash
 # Development
-make dev          # Full dev workflow (format, lint, test)
-make test         # Run tests
-make format       # Format code
-make lint         # Lint code
+make dev
+make test
+make format
+make lint
 
-# Running
-make run          # Start server (dev mode)
-make run-prod     # Start server (production)
-make cli          # Start CLI
+# Run
+make run
+make cli
 
-# Maintenance
-make clean        # Clean temp files
-make install-dev  # Install dev dependencies
+# Docker
+docker-compose up --build
+docker-compose logs -f
 ```
-
-## Getting Help
-
-- **Documentation**: Check [README.md](README.md) and [CONFIGURATION.md](CONFIGURATION.md)
-- **API Docs**: http://localhost:8000/docs (when server is running)
-- **Examples**: See `examples.py`
-- **Tests**: Check `tests/` directory
-
-## What's Next?
-
-Try these features:
-1. Upload different document types (PDF, TXT, MD)
-2. Use different LLM providers
-3. Build custom LangGraph workflows
-4. Integrate with your own applications
-5. Deploy to production
 
 ---
 
-**Happy building! 🚀**
+**Happy building!**

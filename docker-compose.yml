@@ -1,17 +1,42 @@
-version: '3.8'
-
 services:
-  llm-pkg:
-    build: .
+  # PostgreSQL database
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: llm_pkg
+      POSTGRES_USER: llm_user
+      POSTGRES_PASSWORD: llm_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_user -d llm_pkg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      args:
+        GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+        OPENAI_API_KEY: ${OPENAI_API_KEY}
+        AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
     ports:
       - "8000:8000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - DATABASE_URL=postgresql://llm_user:llm_password@postgres:5432/llm_pkg
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./data/uploads:/app/data/uploads
-      - ./config:/app/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn llm_pkg.app:app --host 0.0.0.0 --port 8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -19,14 +44,26 @@ services:
       timeout: 3s
       retries: 3
 
-  # Optional: Ollama service for local LLM
-  ollama:
-    image: ollama/ollama:latest
+  # Nginx reverse proxy with built-in frontend
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
     ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
+      - "8080:80"
+    depends_on:
+      - backend
     restart: unless-stopped
 
+  # Optional: Ollama service for local LLM
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   restart: unless-stopped
+
 volumes:
+  postgres_data:
   ollama_data:

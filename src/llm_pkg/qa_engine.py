@@ -1,24 +1,26 @@
 """
 QA Engine - LangChain & LangGraph Integration
 ==============================================
-Implements question-answering using LangChain and LangGraph with RAG.
+Implements question-answering using LangChain and LangGraph with RAG and memory.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
+import uuid
 
-from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.checkpoint.memory import MemorySaver
 
 from llm_pkg.config import LangGraphManager, LLMLoader
 from llm_pkg.document_processor import DocumentProcessor
-from llm_pkg.storage import STORAGE_DIR, list_documents
+from llm_pkg.storage import STORAGE_DIR, PostgreSQLVectorStore, list_documents
 
 logger = logging.getLogger("llm_pkg.qa_engine")
 
@@ -27,20 +29,28 @@ class QAState(dict):
     """State for LangGraph QA workflow."""
 
     question: str
+    chat_history: list
     documents: list[Document]
     context: str
     answer: str
     provider: str
     metadata: dict[str, Any]
+    thread_id: str
 
 
 class QAEngine:
     """
     Question-Answering engine using LangChain and LangGraph.
-    Implements RAG (Retrieval-Augmented Generation) pattern.
+    Implements RAG (Retrieval-Augmented Generation) pattern with memory.
     """
 
-    def __init__(self, llm_loader: LLMLoader, graph_manager: LangGraphManager):
+    def __init__(
+        self,
+        llm_loader: LLMLoader,
+        graph_manager: LangGraphManager,
+        user_id: Optional[int] = None,
+        conversation_id: Optional[int] = None,
+    ):
         self.llm_loader = llm_loader
         self.graph_manager = graph_manager
         self.doc_processor = DocumentProcessor()
@@ -48,11 +58,23 @@ class QAEngine:
             chunk_size=1000,
             chunk_overlap=200,
         )
+        self.user_id = user_id
+        self.conversation_id = conversation_id
         self.vector_store = None
+        
+        # Memory saver for LangGraph
+        self.memory = MemorySaver()
         self.qa_graph = self._build_qa_graph()
 
+        # Optional: token encoding library to validate token counts
+        try:
+            import tiktoken
+            self._tiktoken = tiktoken
+        except Exception:
+            self._tiktoken = None
+
     def _build_qa_graph(self) -> CompiledStateGraph:
-        """Build LangGraph workflow for QA."""
+        """Build LangGraph workflow for QA with memory."""
         workflow = StateGraph(dict)
 
         # Define nodes
@@ -64,7 +86,8 @@ class QAEngine:
         workflow.add_edge("retrieve", "generate")
         workflow.add_edge("generate", END)
 
-        return workflow.compile()
+        # Compile with memory checkpointer
+        return workflow.compile(checkpointer=self.memory)
 
     async def _retrieve_node(self, state: dict) -> dict:
         """Retrieve relevant documents."""
@@ -73,43 +96,76 @@ class QAEngine:
 
         logger.info(f"Retrieving documents for: {question[:50]}...")
 
-        # Load and process documents
+        # Load and process documents (user and conversation specific)
         documents = await self._load_documents(document_name)
+
+        # If no documents found, mark for AI agent mode
+        if not documents:
+            logger.info("No documents found, using AI agent mode")
+            state["documents"] = []
+            state["context"] = ""
+            state["use_agent_mode"] = True
+            return state
 
         # Split documents
         chunks = self.text_splitter.split_documents(documents)
         logger.info(f"Created {len(chunks)} chunks from documents")
 
-        # Create or update vector store
-        embeddings = OpenAIEmbeddings()
-        self.vector_store = FAISS.from_documents(chunks, embeddings)
+        try:
+            # Create or update vector store with OpenAI embeddings
+            embeddings = OpenAIEmbeddings()
+            self.vector_store = PostgreSQLVectorStore(
+                embeddings,
+                user_id=self.user_id,
+                conversation_id=self.conversation_id
+            )
 
-        # Retrieve relevant chunks
-        retriever = self.vector_store.as_retriever(search_kwargs={"k": 3})
-        relevant_docs = retriever.get_relevant_documents(question)
+            # Add documents to vector store
+            texts = [chunk.page_content for chunk in chunks]
+            metadatas = [chunk.metadata for chunk in chunks]
+            self.vector_store.add_texts(texts, metadatas)
+
+            # Retrieve relevant chunks
+            relevant_docs = self.vector_store.similarity_search(question, k=3)
+        except Exception as e:
+            logger.warning(f"Vector store failed, using all document chunks: {e}")
+            # Fallback: use first few chunks directly
+            relevant_docs = chunks[:3] if len(chunks) >= 3 else chunks
 
         # Create context
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
         state["documents"] = relevant_docs
         state["context"] = context
+        state["use_agent_mode"] = False
 
         return state
 
     async def _generate_node(self, state: dict) -> dict:
-        """Generate answer using LLM."""
+        """Generate answer using LLM with conversation history."""
         question = state["question"]
         context = state["context"]
         provider = state.get("provider")
+        chat_history = state.get("chat_history", [])
+        use_agent_mode = state.get("use_agent_mode", False)
 
         logger.info(f"Generating answer using provider: {provider or 'default'}")
 
         # Build LLM
         llm = self.llm_loader.build_model(provider)
 
-        # Create prompt
-        prompt = f"""Based on the following context, answer the question.
-If you cannot find the answer in the context, say so.
+        # Create prompt based on mode
+        if use_agent_mode:
+            # AI Agent mode - no context, just conversation
+            prompt = f"""You are a helpful AI assistant. Answer the user's question based on your knowledge and the conversation history.
+
+Question: {question}
+
+Answer:"""
+        else:
+            # RAG mode - use context from documents
+            prompt = f"""Based on the following context, answer the question.
+If you cannot find the answer in the context, use your general knowledge but mention that the information is not from the provided documents.
 
 Context:
 {context}
@@ -117,6 +173,14 @@ Context:
 Question: {question}
 
 Answer:"""
+
+        # Add chat history for context if available
+        if chat_history:
+            history_text = "\n".join([
+                f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}"
+                for msg in chat_history[-6:]  # Last 3 exchanges
+            ])
+            prompt = f"Previous conversation:\n{history_text}\n\n{prompt}"
 
         # Generate answer
         response = llm.invoke(prompt)
@@ -126,34 +190,49 @@ Answer:"""
         state["metadata"] = {
             "num_sources": len(state.get("documents", [])),
             "context_length": len(context),
+            "mode": "agent" if use_agent_mode else "rag",
         }
 
         return state
 
     async def _load_documents(self, document_name: str | None = None) -> list[Document]:
-        """Load and process documents."""
+        """Load and process documents (user and conversation specific)."""
+        from llm_pkg.database.models import get_db, Document as DBDocument
+
         documents = []
+        db = next(get_db())
+        
+        try:
+            # Query documents for this user and optionally conversation
+            query = db.query(DBDocument).filter(DBDocument.user_id == self.user_id)
+            
+            if self.conversation_id:
+                # Get conversation-specific documents or user documents without conversation
+                query = query.filter(
+                    (DBDocument.conversation_id == self.conversation_id) |
+                    (DBDocument.conversation_id == None)
+                )
+            
+            if document_name:
+                query = query.filter(DBDocument.filename == document_name)
+            
+            db_docs = query.all()
+            
+            for db_doc in db_docs:
+                doc = Document(
+                    page_content=db_doc.content,
+                    metadata={
+                        "source": db_doc.filename,
+                        "id": db_doc.id,
+                        "conversation_id": db_doc.conversation_id,
+                    }
+                )
+                documents.append(doc)
+                
+        finally:
+            db.close()
 
-        if document_name:
-            # Load specific document
-            file_path = STORAGE_DIR / document_name
-            if not file_path.exists():
-                raise FileNotFoundError(f"Document not found: {document_name}")
-
-            processed = await self.doc_processor.process_document(file_path)
-            documents = self.doc_processor.create_langchain_documents(processed)
-        else:
-            # Load all documents
-            for file_path in list_documents():
-                if file_path.is_file():
-                    try:
-                        processed = await self.doc_processor.process_document(file_path)
-                        docs = self.doc_processor.create_langchain_documents(processed)
-                        documents.extend(docs)
-                    except Exception as e:
-                        logger.warning(f"Error processing {file_path.name}: {e}")
-
-        logger.info(f"Loaded {len(documents)} document(s)")
+        logger.info(f"Loaded {len(documents)} document(s) for user {self.user_id}, conversation {self.conversation_id}")
         return documents
 
     async def query(
@@ -161,31 +240,40 @@ Answer:"""
         question: str,
         provider: str | None = None,
         document_name: str | None = None,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Execute a question-answering query.
+        Execute a question-answering query with memory.
 
         Args:
             question: The question to answer
             provider: Optional LLM provider to use
             document_name: Optional specific document to query
+            thread_id: Thread ID for conversation continuity
 
         Returns:
             Dictionary with answer and metadata
         """
+        # Generate or use provided thread ID
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
+        
         # Prepare initial state
         initial_state = {
             "question": question,
             "provider": provider,
             "document_name": document_name,
+            "thread_id": thread_id,
             "documents": [],
             "context": "",
             "answer": "",
             "metadata": {},
+            "chat_history": [],
         }
 
-        # Execute LangGraph workflow
-        result = await self.qa_graph.ainvoke(initial_state)
+        # Execute LangGraph workflow with thread
+        config = {"configurable": {"thread_id": thread_id}}
+        result = await self.qa_graph.ainvoke(initial_state, config)
 
         # Format response
         return {
@@ -200,6 +288,7 @@ Answer:"""
             ],
             "provider": provider or "default",
             "metadata": result.get("metadata", {}),
+            "thread_id": thread_id,
         }
 
     async def query_simple(

@@ -2,12 +2,13 @@
 
 ## Overview
 
-**LLM-PKG** is a comprehensive document processing and question-answering platform built with:
-- **uv**: Fast Python package manager
+**LLM-PKG** is a practical document processing and question-answering platform built with:
+- **uv**: Fast Python package manager (used in setup scripts)
 - **LangChain**: LLM application framework
 - **LangGraph**: Workflow orchestration
 - **FastAPI**: Modern web framework
-- **Docling-like processing**: Advanced document scanning
+- **Docling-like processing**: Document scanning and structure analysis
+- **PostgreSQL + pgvector**: Vector storage and retrieval (primary storage)
 
 ## What Has Been Created
 
@@ -27,318 +28,101 @@
    - LangChain document creation
 
 3. **`llm_pkg/qa_engine.py`** - Q&A engine with RAG
-   - LangChain integration
-   - LangGraph workflow
-   - Vector store (FAISS) for retrieval
+   - LangChain / LangGraph integration
+   - Vector store using PostgreSQL + pgvector for retrieval
    - Multi-provider support
    - Document chunking and embedding
 
 4. **`llm_pkg/config.py`** - Configuration management
-   - TOML-based configuration
-   - Multi-provider support (OpenAI, Azure, Ollama)
+   - TOML-based configuration with environment variable interpolation
+   - Multi-provider support (OpenAI, Azure, Ollama, OpenRouter)
    - Hot-reload capability
-   - LangGraph integration
 
-5. **`llm_pkg/storage.py`** - Document storage
-   - File upload handling
-   - Document metadata
-   - Storage management
+5. **`llm_pkg/storage.py`** - Document storage and metadata management
 
 6. **`llm_pkg/cli.py`** - Command-line interface
-   - Interactive mode
-   - Document management
-   - Query execution
-   - Configuration viewing
+   - Interactive mode and direct commands
 
 ### Configuration Files
 
 7. **`config/llm_config.toml`** - LLM provider configuration
-   - OpenAI settings
-   - Azure OpenAI settings
-   - Ollama settings
-   - Metadata and logging
+   - OpenAI, Azure, Ollama, OpenRouter sections
+   - Examples of creative vs precise parameter groups
 
-8. **`pyproject.toml`** - Project configuration
-   - Dependencies
-   - CLI entry points
-   - Build system
-   - Development tools
+8. **`pyproject.toml`** - Project configuration (dependencies, entry points)
 
-### Documentation
+### Documentation & Helpers
 
-9. **`README.md`** - Comprehensive documentation
-   - Features overview
-   - Architecture diagram
-   - Installation guide
-   - Usage examples
-   - API documentation
-   - Configuration guide
-   - Deployment instructions
-
-10. **`QUICKSTART.md`** - Quick start guide
-    - 5-minute setup
-    - Common workflows
-    - Troubleshooting
-
-11. **`CONFIGURATION.md`** - Detailed configuration guide
-    - Provider-specific setup
-    - API key management
-    - Advanced configuration
-    - Best practices
-
-### Development Tools
-
-12. **`setup.sh`** - Automated setup script
-13. **`Makefile`** - Development commands
-14. **`Dockerfile`** - Container configuration
-15. **`docker-compose.yml`** - Multi-container setup
-16. **`.gitignore`** - Git ignore rules
-17. **`.env.example`** - Environment variable template
-18. **`examples.py`** - Usage examples
-19. **`tests/test_basic.py`** - Test suite
-20. **`LICENSE`** - MIT license
+9. **`README.md`** - Main documentation and quickstart
+10. **`QUICKSTART.md`** - 5-minute guide (updated for Docker-first usage)
+11. **`CONFIGURATION.md`** - Provider setup and troubleshooting
+12. **`setup.sh`, `Makefile`** - Developer helper scripts
 
 ## Key Features Implemented
 
-### ✅ Document Upload & Processing
-- Upload PDF, TXT, MD files via API or CLI
-- Docling-like document scanning
-- Text extraction with layout awareness
-- Table detection
-- Structure analysis
-- Metadata extraction
+- Document upload & processing (PDF/TXT/MD)
+- Docling-like scanning and structure extraction
+- RAG-based Q&A with LangChain and LangGraph
+- PostgreSQL + pgvector vector storage (preferred)
+- Configurable multi-provider LLM setup
+- REST API and interactive CLI
+- Docker Compose for multi-service deployment
 
-### ✅ LLM Provider Configuration
-- OpenAI integration
-- Azure OpenAI integration
-- Ollama (local) integration
-- TOML-based configuration
-- Hot-reload support
-- Multiple providers simultaneously
+## How to Use (summary)
 
-### ✅ Question-Answering System
-- RAG (Retrieval-Augmented Generation)
-- LangChain chains
-- LangGraph workflows
-- Vector search with FAISS
-- Document chunking
-- Context-aware answers
-
-### ✅ REST API
-- FastAPI server
-- Document upload endpoint
-- Document listing endpoint
-- Query endpoint
-- Configuration endpoints
-- Interactive documentation (Swagger/OpenAPI)
-- Health checks
-
-### ✅ CLI Interface
-- Interactive mode
-- Direct commands
-- Document management
-- Query execution
-- Configuration viewing
-- Rich terminal output
-
-### ✅ Development Tools
-- Automated setup script
-- Makefile for common tasks
-- Docker support
-- Docker Compose for multi-service
-- Test suite
-- Code formatting (black)
-- Linting (ruff)
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   User Interfaces                    │
-│  ┌──────────────┐  ┌─────────┐  ┌──────────────┐   │
-│  │ REST API     │  │   CLI   │  │    Python    │   │
-│  │ (FastAPI)    │  │         │  │  API         │   │
-│  └──────────────┘  └─────────┘  └──────────────┘   │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│              Application Layer                       │
-│  ┌──────────────────┐  ┌──────────────────────┐    │
-│  │ Document         │  │ QA Engine            │    │
-│  │ Processor        │  │ (RAG)                │    │
-│  └──────────────────┘  └──────────────────────┘    │
-│  ┌──────────────────┐  ┌──────────────────────┐    │
-│  │ Config           │  │ Storage              │    │
-│  │ Management       │  │ Management           │    │
-│  └──────────────────┘  └──────────────────────┘    │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│         LangChain & LangGraph Layer                 │
-│  ┌─────────┐  ┌─────────┐  ┌────────────┐          │
-│  │  Chains │  │  Graphs │  │  Embeddings│          │
-│  └─────────┘  └─────────┘  └────────────┘          │
-│  ┌─────────┐  ┌─────────┐  ┌────────────┐          │
-│  │ Retriev │  │  FAISS  │  │  Chunking  │          │
-│  └─────────┘  └─────────┘  └────────────┘          │
-└─────────────────────────────────────────────────────┘
-                        │
-┌─────────────────────────────────────────────────────┐
-│              LLM Providers Layer                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │ OpenAI   │  │  Azure   │  │  Ollama  │          │
-│  └──────────┘  └──────────┘  └──────────┘          │
-└─────────────────────────────────────────────────────┘
-```
-
-## How to Use
-
-### Quick Start
+### Docker (recommended)
 
 ```bash
-# 1. Setup
-cd /home/rajendrayadav/Documents/projects/llm-pkg/src
-./setup.sh
-
-# 2. Configure
-# Edit config/llm_config.toml with your API keys
-
-# 3. Run
-make run  # Start server
-# OR
-make cli  # Start CLI
+cd /home/rajendrayadav/Documents/projects/llm-pkg
+cp .env.example .env
+# update .env with API keys
+docker-compose up --build
 ```
 
-### Using the API
+Access API at http://localhost/api and frontend at http://localhost.
+
+### Local development
+
+Follow the README development section to create a virtualenv, install dependencies, start Postgres (docker recommended), run migrations (alembic), and start the backend with `uvicorn llm_pkg.app:app --reload`.
+
+## Next Steps / Customization
+
+- Configure provider API keys in `config/llm_config.toml` or `.env`
+- Extend `llm_pkg/qa_engine.py` for custom workflows
+- Add new document formats in `llm_pkg/document_processor.py`
+- Add endpoints in `llm_pkg/app.py` for integrations
+
+## Testing & Maintenance
+
+Run unit tests with the provided Makefile:
 
 ```bash
-# Upload document
-curl -X POST http://localhost:8000/upload -F "file=@doc.pdf"
-
-# Query
-curl -X POST http://localhost:8000/query \
-  -F "question=What is this about?" \
-  -F "provider=openai"
-
-# List documents
-curl http://localhost:8000/documents
-```
-
-### Using the CLI
-
-```bash
-# Interactive mode
-llm-pkg
-
-# Commands
-llm-pkg upload document.pdf
-llm-pkg list
-llm-pkg query "What are the key points?"
-llm-pkg config
-```
-
-## Next Steps
-
-### To Get Started:
-1. Configure API keys in `config/llm_config.toml`
-2. Run `./setup.sh` or follow manual setup
-3. Start the server with `make run`
-4. Visit http://localhost:8000/docs for API documentation
-5. Try uploading a document and asking questions
-
-### To Customize:
-1. Modify `llm_pkg/qa_engine.py` for custom workflows
-2. Extend `llm_pkg/document_processor.py` for more formats
-3. Add new endpoints in `llm_pkg/app.py`
-4. Configure additional LLM providers in config file
-
-### To Deploy:
-1. Use Docker: `docker-compose up -d`
-2. Configure environment variables
-3. Set up reverse proxy (nginx)
-4. Enable HTTPS
-5. Add authentication
-
-## Testing
-
-```bash
-# Run tests
 make test
+```
 
-# Run with coverage
-make test-cov
+Format and lint using:
 
-# Format code
+```bash
 make format
-
-# Lint code
 make lint
 ```
 
-## Documentation
+## Status
 
-- **README.md** - Main documentation
-- **QUICKSTART.md** - Quick start guide
-- **CONFIGURATION.md** - Configuration details
-- **API Docs** - http://localhost:8000/docs (when running)
+The project is functional and set up for Docker-based deployment and local development. The primary vector store is PostgreSQL with pgvector; legacy FAISS references were removed in favor of the database-backed approach.
 
-## Dependencies
+## Runtime (Docker Compose)
 
-### Core
-- FastAPI - Web framework
-- LangChain - LLM framework
-- LangGraph - Workflow orchestration
-- pdfplumber - PDF processing
-- pypdf - PDF metadata
-- FAISS - Vector search
-- Rich - CLI output
+When using the provided Docker Compose setup the services and ports are mapped as follows (see `docker-compose.yml` and `nginx.conf`):
 
-### Providers
-- langchain-openai - OpenAI integration
-- langchain-azure-ai - Azure integration
-- langchain-ollama - Ollama integration
+- `postgres` (PostgreSQL + pgvector): container listens on 5432 (host mapped to 5432).
+- `backend` (FastAPI): runs inside Docker on port 8000. The container command runs migrations then starts Uvicorn on `--port 8000`.
+- `nginx` (reverse proxy + static frontend): exposes container port 80 to host port 8080 and proxies `/api/` requests to the backend at `backend:8000`.
 
-## Project Structure
+Therefore, when running with Docker Compose:
+- Frontend (served by nginx): http://localhost:8080
+- Backend API (proxied): http://localhost:8080/api
+- API docs (proxied): http://localhost:8080/api/docs
+- Health (proxied): http://localhost:8080/health
 
-```
-llm-pkg/
-├── llm_pkg/              # Main package
-│   ├── app.py           # FastAPI application
-│   ├── cli.py           # CLI interface
-│   ├── config.py        # Configuration
-│   ├── document_processor.py  # Document processing
-│   ├── qa_engine.py     # Q&A engine
-│   └── storage.py       # Storage management
-├── config/              # Configuration files
-│   └── llm_config.toml  # LLM configuration
-├── data/                # Data directory
-│   └── uploads/         # Uploaded documents
-├── tests/               # Test suite
-├── examples.py          # Usage examples
-├── README.md            # Main docs
-├── QUICKSTART.md        # Quick start
-├── CONFIGURATION.md     # Config guide
-├── setup.sh             # Setup script
-├── Makefile             # Dev commands
-├── Dockerfile           # Docker config
-├── docker-compose.yml   # Multi-container
-└── pyproject.toml       # Project config
-```
-
-## Success Criteria Met
-
-✅ Document upload functionality
-✅ Docling-like document scanning
-✅ LangChain integration
-✅ LangGraph workflows
-✅ Multi-provider configuration (OpenAI, Azure, Ollama)
-✅ TOML configuration with hot-reload
-✅ Comprehensive README documentation
-✅ Full-fledged application with API and CLI
-✅ Development tools and testing
-✅ Docker support
-✅ Production-ready structure
-
----
-
-**The project is complete and ready to use!** 🎉
+If you access the backend directly (not via nginx), use http://localhost:8000 for API calls.

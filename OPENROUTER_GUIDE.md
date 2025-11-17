@@ -35,6 +35,31 @@ base_url = "https://openrouter.ai/api/v1"
 temperature = 0.7
 ```
 
+### Direct Google Gemini (Vertex AI) - optional
+
+If you prefer to call Google Gemini directly (not through OpenRouter), configure a provider using LangChain's Vertex AI integration. Install dependencies:
+
+```bash
+pip install -U langchain-google-vertexai google-cloud-aiplatform
+```
+
+Add a provider in `config/llm_config.toml`:
+
+```toml
+[gemini]
+provider = "vertexai"
+model = "google/gemini-pro-1.5"
+project = "your-gcp-project-id"
+location = "us-central1"
+api_key = "<SET_GOOGLE_API_KEY>"  # Or use `credentials` for JSON path
+temperature = 0.7
+```
+
+Notes:
+- LangChain expects provider name `google_vertexai` internally; LLM-PKG maps `vertexai` to `google_vertexai`.
+- If you use JSON credentials, set the path in `credentials` or `GOOGLE_APPLICATION_CREDENTIALS`.
+```
+
 ### Step 3: Use OpenRouter
 
 **Via API:**

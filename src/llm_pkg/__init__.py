@@ -12,10 +12,18 @@ Main Components:
 - Storage: Document storage management
 
 Example Usage:
+
     >>> from llm_pkg import DocumentProcessor, QAEngine, llm_loader, graph_manager
     >>> processor = DocumentProcessor()
     >>> qa = QAEngine(llm_loader, graph_manager)
-    >>> result = await qa.query("What is this document about?")
+    >>>
+    >>> async def main():
+    ...     result = await qa.query("What is this document about?")
+    ...     return result
+    >>>
+    >>> # Run with asyncio
+    >>> import asyncio
+    >>> asyncio.run(main())
 """
 
 __version__ = "0.1.0"
